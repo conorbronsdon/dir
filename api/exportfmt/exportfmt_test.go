@@ -406,6 +406,36 @@ func TestExtractSkillBundleArchive(t *testing.T) {
 	})
 }
 
+func TestSkillMarkdownFromArchive(t *testing.T) {
+	archive, err := base64.StdEncoding.DecodeString(skillBundleArchiveBase64(t))
+	require.NoError(t, err)
+
+	md, err := exportfmt.SkillMarkdownFromArchive(archive)
+	require.NoError(t, err)
+	assert.Contains(t, md, "name: code-review")
+
+	plain := []byte("---\nname: plain\ndescription: x\n---\n")
+	md, err = exportfmt.SkillMarkdownFromArchive(plain)
+	require.NoError(t, err)
+	assert.Equal(t, string(plain), md)
+}
+
+func TestSkillBundleMatchesDir(t *testing.T) {
+	archive, err := base64.StdEncoding.DecodeString(skillBundleArchiveBase64(t))
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	matches, err := exportfmt.SkillBundleMatchesDir(archive, dir)
+	require.NoError(t, err)
+	assert.False(t, matches)
+
+	require.NoError(t, exportfmt.ExtractSkillBundleArchive(archive, dir))
+
+	matches, err = exportfmt.SkillBundleMatchesDir(archive, dir)
+	require.NoError(t, err)
+	assert.True(t, matches)
+}
+
 func TestMCPGHCopilotFormatter_Format(t *testing.T) {
 	f, err := exportfmt.GetFormatter("mcp-ghcopilot")
 	require.NoError(t, err)

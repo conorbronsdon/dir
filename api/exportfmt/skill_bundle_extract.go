@@ -6,14 +6,120 @@ package exportfmt
 import (
 	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 )
 
 const skillManifestFile = "SKILL.md"
+
+// SkillMarkdownFromArchive returns the SKILL.md content from a skill artifact.
+// Plain-text archives are returned as-is; gzip tar bundles must contain SKILL.md.
+func SkillMarkdownFromArchive(archive []byte) (string, error) {
+	if len(archive) == 0 {
+		return "", fmt.Errorf("skill bundle archive is empty")
+	}
+
+	if !isGzipArchive(archive) {
+		return string(archive), nil
+	}
+
+	iterator, err := NewTarIterator(archive, WithTypeflag(tar.TypeReg))
+	if err != nil {
+		return "", fmt.Errorf("invalid gzip archive: %w", err)
+	}
+
+	for entry, err := range iterator {
+		if err != nil {
+			return "", fmt.Errorf("read tar entry: %w", err)
+		}
+
+		rel, err := localTarEntryPath(entry.header.Name)
+		if err != nil {
+			return "", fmt.Errorf("invalid tar entry %q: %w", entry.header.Name, err)
+		}
+
+		if rel != skillManifestFile {
+			continue
+		}
+
+		return string(entry.payload), nil
+	}
+
+	return "", fmt.Errorf("archive does not contain %q", skillManifestFile)
+}
+
+// SkillBundleMatchesDir reports whether dir already contains the same files as archive.
+func SkillBundleMatchesDir(archive []byte, dir string) (bool, error) {
+	if len(archive) == 0 {
+		return false, fmt.Errorf("skill bundle archive is empty")
+	}
+
+	if !isGzipArchive(archive) {
+		return matchesSkillManifest(dir, archive)
+	}
+
+	return matchesGzip(dir, archive)
+}
+
+func matchesSkillManifest(dir string, b []byte) (bool, error) {
+	content, err := os.ReadFile(filepath.Join(dir, skillManifestFile))
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", skillManifestFile, err)
+	}
+
+	return bytes.Equal(content, b), nil
+}
+
+func matchesGzip(dir string, b []byte) (bool, error) {
+	iterator, err := NewTarIterator(b, WithTypeflag(tar.TypeReg))
+	if err != nil {
+		return false, fmt.Errorf("invalid gzip archive: %w", err)
+	}
+
+	hasMatch := false
+
+	for entry, err := range iterator {
+		if err != nil {
+			return false, fmt.Errorf("read tar entry: %w", err)
+		}
+
+		match, err := matchesTarEntry(dir, entry)
+		if err != nil {
+			return false, err
+		}
+
+		if !match {
+			return false, nil
+		}
+
+		hasMatch = true
+	}
+
+	if !hasMatch {
+		return false, fmt.Errorf("archive contains no regular files")
+	}
+
+	return true, nil
+}
+
+func matchesTarEntry(dir string, entry *TarEntry) (bool, error) {
+	path, err := localTarEntryPath(entry.header.Name)
+	if err != nil {
+		return false, fmt.Errorf("invalid tar entry %q: %w", entry.header.Name, err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, path))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("read %q: %w", path, err)
+	}
+
+	return bytes.Equal(content, entry.payload), nil
+}
 
 // ExtractSkillBundleArchive extracts a skill artifact into destDir.
 // The artifact is either a gzip-compressed tar bundle (full skill with code samples)
@@ -37,25 +143,17 @@ func ExtractSkillBundleArchive(archive []byte, destDir string) error {
 	}
 	defer root.Close()
 
-	gzipReader, err := gzip.NewReader(bytes.NewReader(archive))
+	iterator, err := NewTarIterator(archive)
 	if err != nil {
 		return fmt.Errorf("invalid gzip archive: %w", err)
 	}
-	defer gzipReader.Close()
 
-	tarReader := tar.NewReader(gzipReader)
-
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-
+	for entry, err := range iterator {
 		if err != nil {
 			return fmt.Errorf("read tar entry: %w", err)
 		}
 
-		if err := extractTarEntry(tarReader, header, root); err != nil {
+		if err := extractTarEntry(root, entry); err != nil {
 			return err
 		}
 	}
@@ -63,7 +161,9 @@ func ExtractSkillBundleArchive(archive []byte, destDir string) error {
 	return nil
 }
 
-func extractTarEntry(tarReader *tar.Reader, header *tar.Header, root *os.Root) error {
+func extractTarEntry(root *os.Root, entry *TarEntry) error {
+	header := entry.header
+
 	rel, err := localTarEntryPath(header.Name)
 	if err != nil {
 		return fmt.Errorf("invalid tar entry %q: %w", header.Name, err)
@@ -88,12 +188,7 @@ func extractTarEntry(tarReader *tar.Reader, header *tar.Header, root *os.Root) e
 			return fmt.Errorf("create file %q: %w", header.Name, err)
 		}
 
-		reader := io.Reader(tarReader)
-		if header.Size >= 0 {
-			reader = io.LimitReader(tarReader, header.Size)
-		}
-
-		if _, err := io.Copy(file, reader); err != nil {
+		if _, err := file.Write(entry.payload); err != nil {
 			_ = file.Close()
 
 			return fmt.Errorf("write file %q: %w", header.Name, err)

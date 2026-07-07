@@ -44,10 +44,9 @@ func Registry() []Agent {
 			Detect: detectByMarker(cursorMarker),
 			MCP:    jsonMCP(cursorMCPPath, "mcpServers"),
 			Skill: &SkillTarget{
-				Strategy:    DedicatedFile,
-				Path:        cursorNoGlobalSkill, // no global rules mechanism
+				Strategy:    SkillFolder,
+				Path:        cursorUserSkillPath,
 				ProjectPath: cursorProjectSkillPath,
-				Render:      renderCursor,
 			},
 		},
 		{
@@ -57,9 +56,9 @@ func Registry() []Agent {
 			Detect: detectByMarker(vscodeMarker),
 			MCP:    jsonMCP(vscodeMCPPath, "servers"),
 			Skill: &SkillTarget{
-				Strategy: DedicatedFile,
-				Path:     copilotSkillPath,
-				Render:   renderCopilot,
+				Strategy:    SkillFolder,
+				Path:        copilotUserSkillPath,
+				ProjectPath: copilotProjectSkillPath,
 			},
 		},
 		{

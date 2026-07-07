@@ -169,12 +169,20 @@ func zedSkillPath(env Env, slug string) (string, error) {
 	return filepath.Join(env.Home, ".agents", "skills", slug, "SKILL.md"), nil
 }
 
-func copilotSkillPath(env Env, slug string) (string, error) {
+func copilotUserSkillPath(env Env, slug string) (string, error) {
 	if err := requireHome(env); err != nil {
 		return "", err
 	}
 
-	return filepath.Join(vscodeUserDir(env), "prompts", slug+".instructions.md"), nil
+	return filepath.Join(env.Home, ".copilot", "skills", slug, "SKILL.md"), nil
+}
+
+func copilotProjectSkillPath(env Env, slug string) (string, error) {
+	if env.Cwd == "" {
+		return "", fmt.Errorf("cannot determine current directory for Copilot project skill")
+	}
+
+	return filepath.Join(env.Cwd, ".github", "skills", slug, "SKILL.md"), nil
 }
 
 func windsurfSkillPath(env Env, _ string) (string, error) {
@@ -239,18 +247,20 @@ func opencodeSkillPath(env Env, _ string) (string, error) {
 	return filepath.Join(env.Home, ".config", "opencode", "AGENTS.md"), nil
 }
 
-// cursorNoGlobalSkill signals that Cursor has no global rules mechanism, so the
-// engine falls back to the project path.
-func cursorNoGlobalSkill(_ Env, _ string) (string, error) {
-	return "", ErrNoGlobalPath
+func cursorUserSkillPath(env Env, slug string) (string, error) {
+	if err := requireHome(env); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(env.Home, ".cursor", "skills", slug, "SKILL.md"), nil
 }
 
 func cursorProjectSkillPath(env Env, slug string) (string, error) {
 	if env.Cwd == "" {
-		return "", fmt.Errorf("cannot determine current directory for Cursor project rule")
+		return "", fmt.Errorf("cannot determine current directory for Cursor project skill")
 	}
 
-	return filepath.Join(env.Cwd, ".cursor", "rules", slug+".mdc"), nil
+	return filepath.Join(env.Cwd, ".cursor", "skills", slug, "SKILL.md"), nil
 }
 
 func codexMarker(env Env) (string, error)    { return filepath.Join(env.Home, ".codex"), nil }
